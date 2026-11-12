@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>India Weather Map</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+          height: 100%;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          overflow: hidden;
+        }
+        #map { position: absolute; inset: 0; z-index: 1; }
+
+        /* ---------- Search Bar ---------- */
+        .search-wrap {
+          position: absolute;
+          top: 16px; left: 16px; right: 16px;
+          z-index: 1000;
+        }
+        .search-box {
+          display: flex; align-items: center;
+          background: #fff;
+          border-radius: 14px;
+          padding: 12px 16px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+          transition: box-shadow .2s;
+        }
+        .search-box:focus-within {
+          box-shadow: 0 6px 24px rgba(37,99,235,0.25), 0 0 0 2px rgba(37,99,235,0.2);
+        }
+        .search-box .icon {
+          font-size: 18px; color: #64748b; margin-right: 10px;
+        }
+        .search-box input {
+          flex: 1; border: none; outline: none;
+          font-size: 15px; color: #0f172a; background: transparent;
+        }
+        .search-box input::placeholder { color: #94a3b8; }
+        .search-box .clear-btn {
+          display: none;
+          border: none; background: #e2e8f0; color: #475569;
+          width: 22px; height: 22px; border-radius: 50%;
+          font-size: 13px; cursor: pointer; line-height: 1;
+        }
+        .search-box .clear-btn.show { display: block; }
+
+        /* ---------- Autocomplete Dropdown ---------- */
+        .suggestions {
+          margin-top: 8px;
+          background: #fff;
+          border-radius: 14px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+          max-height: 260px;
+          overflow-y: auto;
+          display: none;
+        }
+        .suggestions.show { display: block; }
+        .suggestion-item {
+          padding: 12px 16px;
+          font-size: 14px;
+          color: #1e293b;
+          border-bottom: 1px solid #f1f5f9;
+          cursor: pointer;
+          display: flex; align-items: center; gap: 10px;
+        }
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-item:hover, .suggestion-item.active {
+          background: #eff6ff; color: #1d4ed8;
+        }
+        .suggestion-item .pin { color: #94a3b8; font-size: 14px; }
+
+        /* ---------- Weather Info Card ---------- */
+        .info-card {
+          position: absolute;
+          left: 16px; right: 16px; bottom: 16px;
+          z-index: 1000;
+          background: rgba(255,255,255,0.97);
+          backdrop-filter: blur(10px);
+          border-radius: 20px;
+          padding: 18px 20px;
+          box-shadow: 0 -4px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+          transform: translateY(120%);
+          transition: transform .35s cubic-bezier(.22,1,.36,1), opacity .3s;
+          opacity: 0;
+        }
+        .info-card.show {
+          transform: translateY(0);
+          opacity: 1;
+        }
+
+        .card-header {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          margin-bottom: 10px;
+        }
+        .place-block { flex: 1; min-width: 0; }
+        .place-name {
+          font-size: 18px; font-weight: 700; color: #0f172a;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .place-sub {
+          font-size: 12px; color: #64748b; margin-top: 3px;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .close-btn {
+          border: none; background: #f1f5f9; color: #64748b;
+          width: 28px; height: 28px; border-radius: 50%;
+          font-size: 16px; cursor: pointer; margin-left: 12px;
+          flex-shrink: 0;
+        }
+
+        .weather-main {
+          display: flex; align-items: center; gap: 14px;
+          margin: 10px 0 12px;
+        }
+        .weather-icon { font-size: 42px; line-height: 1; }
+        .weather-temp {
+          font-size: 32px; font-weight: 700; color: #0f172a;
+          line-height: 1;
+        }
+        .weather-temp small { font-size: 16px; font-weight: 500; color: #64748b; }
+        .weather-cond { font-size: 14px; color: #475569; margin-top: 4px; }
+
+        .stats-row {
+          display: flex; gap: 10px; flex-wrap: wrap;
+          border-top: 1px solid #f1f5f9; padding-top: 12px;
+        }
+        .stat {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 13px; color: #334155;
+          background: #f8fafc; padding: 7px 12px;
+          border-radius: 10px;
+        }
+        .stat .label { color: #94a3b8; font-size: 11px; }
+
+        /* ---------- Loading ---------- */
+        .card-loading {
+          display: flex; align-items: center; justify-content: center;
+          gap: 10px; padding: 14px 0; color: #64748b; font-size: 14px;
+        }
+        .spinner {
+          width: 18px; height: 18px;
+          border: 2px solid #e2e8f0;
+          border-top-color: #2563eb;
+          border-radius: 50%;
+          animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ---------- Pin Marker ---------- */
+        .custom-pin {
+          background: #2563eb;
+          border: 3px solid #fff;
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          width: 26px; height: 26px;
+          box-shadow: 0 4px 10px rgba(37,99,235,0.4);
+        }
+        .custom-pin::after {
+          content: ''; position: absolute;
+          width: 8px; height: 8px; background: #fff;
+          border-radius: 50%; top: 6px; left: 6px;
+        }
+
+        /* Hide Leaflet attribution shadow */
+        .leaflet-control-attribution {
+          font-size: 9px !important;
+          background: rgba(255,255,255,0.7) !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Search bar -->
+<div class="search-wrap">
+    <div class="search-box">
+        <span class="icon">🔍</span>
+        <input id="searchInput" type="text" placeholder="Search a place in India..." autocomplete="off">
+        <button id="clearBtn" class="clear-btn">×</button>
+    </div>
+    <div id="suggestions" class="suggestions"></div>
+</div>
+
+<!-- Info card -->
+<div id="infoCard" class="info-card">
+    <div id="cardContent"></div>
+</div>
+
+<script>
+    // ---------- Map setup ----------
+    const map = L.map('map', { zoomControl: false }).setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    let currentMarker = null;
+
+    // Custom pin icon
+    const pinIcon = L.divIcon({
+      className: '',
+      html: '<div class="custom-pin"></div>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 26]
+    });
+
+    // ---------- Weather code mapping ----------
+    function weatherInfo(code, isDay = 1) {
+      const map = {
+        0: { emoji: isDay ? '☀️' : '🌙', text: 'Clear Sky' },
+        1: { emoji: '🌤️', text: 'Mainly Clear' },
+        2: { emoji: '⛅', text: 'Partly Cloudy' },
+        3: { emoji: '☁️', text: 'Overcast' },
+        45: { emoji: '🌫️', text: 'Fog' },
+        48: { emoji: '🌫️', text: 'Rime Fog' },
+        51: { emoji: '🌦️', text: 'Light Drizzle' },
+        53: { emoji: '🌦️', text: 'Drizzle' },
+        55: { emoji: '🌧️', text: 'Dense Drizzle' },
+        61: { emoji: '🌧️', text: 'Light Rain' },
+        63: { emoji: '🌧️', text: 'Rain' },
+        65: { emoji: '🌧️', text: 'Heavy Rain' },
+        71: { emoji: '🌨️', text: 'Light Snow' },
+        73: { emoji: '❄️', text: 'Snow' },
+        75: { emoji: '❄️', text: 'Heavy Snow' },
+        80: { emoji: '🌦️', text: 'Rain Showers' },
+        81: { emoji: '🌧️', text: 'Rain Showers' },
+        82: { emoji: '⛈️', text: 'Violent Showers' },
+        95: { emoji: '⛈️', text: 'Thunderstorm' },
+        96: { emoji: '⛈️', text: 'Thunderstorm + Hail' },
+        99: { emoji: '⛈️', text: 'Severe Thunderstorm' }
+      };
+      return map[code] || { emoji: '🌡️', text: 'Unknown' };
+    }
+
+    // ---------- UI helpers ----------
+    const infoCard = document.getElementById('infoCard');
+    const cardContent = document.getElementById('cardContent');
+    const searchInput = document.getElementById('searchInput');
+    const clearBtn = document.getElementById('clearBtn');
+    const suggestionsEl = document.getElementById('suggestions');
+
+    function showLoading() {
+      infoCard.classList.add('show');
+      cardContent.innerHTML = `
+        <div class="card-loading">
+          <div class="spinner"></div>
+          <span>Fetching weather data...</span>
+        </div>`;
+    }
+
+    function showError(msg) {
+      infoCard.classList.add('show');
+      cardContent.innerHTML = `
+        <div class="card-loading" style="color:#ef4444;">
+          ⚠️ ${msg}
+        </div>`;
+    }
+
+    function renderWeather(placeData, weatherData, lat, lon) {
+      const placeName = placeData.display_name ? placeData.display_name.split(',')[0] : 'Unknown Place';
+      const placeSub = placeData.display_name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+      const w = weatherData.current_weather;
+      const info = weatherInfo(w.weathercode, w.is_day);
+
+      cardContent.innerHTML = `
+        <div class="card-header">
+          <div class="place-block">
+            <div class="place-name">${placeName}</div>
+            <div class="place-sub">${placeSub}</div>
+          </div>
+          <button class="close-btn" onclick="document.getElementById('infoCard').classList.remove('show')">×</button>
+        </div>
+
+        <div class="weather-main">
+          <div class="weather-icon">${info.emoji}</div>
+          <div>
+            <div class="weather-temp">${w.temperature.toFixed(1)}<small>°C</small></div>
+            <div class="weather-cond">${info.text}</div>
+          </div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat"><span>💨</span><span class="label">Wind</span> ${w.windspeed} km/h</div>
+          <div class="stat"><span>🧭</span><span class="label">Dir</span> ${w.winddirection}°</div>
+          <div class="stat"><span>📍</span>${lat.toFixed(2)}, ${lon.toFixed(2)}</div>
+        </div>
+      `;
+      infoCard.classList.add('show');
+    }
+
+    // ---------- Core fetch logic ----------
+    async function fetchPlaceAndWeather(lat, lon) {
+      // drop marker
+      if (currentMarker) map.removeLayer(currentMarker);
+      currentMarker = L.marker([lat, lon], { icon: pinIcon }).addTo(map);
+
+      showLoading();
+
+      try {
+        const [placeRes, weatherRes] = await Promise.all([
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
+            headers: { 'Accept': 'application/json' }
+          }),
+          fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
+        ]);
+
+        if (!weatherRes.ok) throw new Error('Weather service unavailable');
+
+        const placeData = placeRes.ok ? await placeRes.json() : { display_name: 'Unknown location' };
+        const weatherData = await weatherRes.json();
+
+        renderWeather(placeData, weatherData, lat, lon);
+      } catch (err) {
+        console.error(err);
+        showError('Could not load weather data. Check your connection.');
+      }
+    }
+
+    // ---------- Map click ----------
+    map.on('click', (e) => {
+      fetchPlaceAndWeather(e.latlng.lat, e.latlng.lng);
+    });
+
+    // ---------- Search with autocomplete ----------
+    let debounceTimer;
+    let activeIndex = -1;
+    let currentSuggestions = [];
+
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      const q = searchInput.value.trim();
+
+      clearBtn.classList.toggle('show', q.length > 0);
+
+      if (q.length < 3) {
+        hideSuggestions();
+        return;
+      }
+
+      debounceTimer = setTimeout(() => searchPlaces(q), 400);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      clearBtn.classList.remove('show');
+      hideSuggestions();
+      searchInput.focus();
+    });
+
+    async function searchPlaces(query) {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&countrycodes=in&limit=6&q=${encodeURIComponent(query)}`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        const data = await res.json();
+        currentSuggestions = data;
+        renderSuggestions(data);
+      } catch (e) {
+        hideSuggestions();
+      }
+    }
+
+    function renderSuggestions(items) {
+      activeIndex = -1;
+      if (!items.length) {
+        suggestionsEl.innerHTML = `<div class="suggestion-item" style="color:#94a3b8;">No places found</div>`;
+        suggestionsEl.classList.add('show');
+        return;
+      }
+
+      suggestionsEl.innerHTML = items.map((item, i) => {
+        const parts = item.display_name.split(',');
+        const main = parts[0];
+        const rest = parts.slice(1, 3).join(',').trim();
+        return `
+          <div class="suggestion-item" data-index="${i}">
+            <span class="pin">📍</span>
+            <div>
+              <div style="font-weight:600;">${main}</div>
+              <div style="font-size:12px;color:#94a3b8;">${rest}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+      suggestionsEl.classList.add('show');
+
+      suggestionsEl.querySelectorAll('.suggestion-item').forEach(el => {
+        el.addEventListener('click', () => selectSuggestion(parseInt(el.dataset.index)));
+      });
+    }
+
+    function selectSuggestion(index) {
+      const item = currentSuggestions[index];
+      if (!item) return;
+
+      const lat = parseFloat(item.lat);
+      const lon = parseFloat(item.lon);
+
+      hideSuggestions();
+      searchInput.value = item.display_name.split(',')[0];
+      searchInput.blur();
+
+      map.flyTo([lat, lon], 11, { duration: 1.2 });
+      setTimeout(() => fetchPlaceAndWeather(lat, lon), 1200);
+    }
+
+    function hideSuggestions() {
+      suggestionsEl.classList.remove('show');
+      suggestionsEl.innerHTML = '';
+      currentSuggestions = [];
+      activeIndex = -1;
+    }
+
+    // Keyboard navigation
+    searchInput.addEventListener('keydown', (e) => {
+      const items = suggestionsEl.querySelectorAll('.suggestion-item[data-index]');
+      if (!items.length) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIndex = Math.min(activeIndex + 1, items.length - 1);
+        updateActive(items);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIndex = Math.max(activeIndex - 1, 0);
+        updateActive(items);
+      } else if (e.key === 'Enter' && activeIndex >= 0) {
+        e.preventDefault();
+        selectSuggestion(activeIndex);
+      } else if (e.key === 'Escape') {
+        hideSuggestions();
+      }
+    });
+
+    function updateActive(items) {
+      items.forEach((el, i) => el.classList.toggle('active', i === activeIndex));
+      if (items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+
+    // Close suggestions when tapping map
+    document.getElementById('map').addEventListener('click', hideSuggestions);
+
+    // Fix Leaflet sizing on viewport changes
+    window.addEventListener('resize', () => setTimeout(() => map.invalidateSize(), 200));
+</script>
+</body>
+</html>
